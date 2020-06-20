@@ -20,6 +20,7 @@ function tokenizer(html)
     stack = TokenStack(String[], 0)
     mode = READ_TAG_CONTENT
     store = ""
+    store2 = ""
     for c in html;
         if mode == READ_TAG_CONTENT
             if c == '<'
@@ -27,8 +28,19 @@ function tokenizer(html)
                     push(stack, store)
                 end
                 store = "<"
+                store2 = ""
                 mode = READ_TAG
+            elseif c == '\n' || c == '\r' || c == '\t'
+                # Ignore too
+            elseif c == ' ' && store == ""
+                # Ignore
+            elseif c == ' '
+                store2 = string(store2, " ")
             else
+                if store2 != ""
+                    store = string(store, store2)
+                    store2 = ""
+                end
                 store = string(store, c)
             end
         elseif mode == READ_TAG
