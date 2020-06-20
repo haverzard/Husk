@@ -1,27 +1,27 @@
 module Html
 
-@enum PARSE_MODE READ_TAG READ_ATTR READ_ATTR_CONTENT READ_TAG_CONTENT
+@enum PARSE_MODE READ_TAG READ_ATTR READ_ATTR_CONTENT READ_CLOSE_TAG READ_TAG_CONTENT
 
 mutable struct TokenStack
-    array
-    size
+    array::Array{String,1}
+    size::UInt
 end
 
-function push(stack, value)
+function push(stack::TokenStack, value::String)
     push!(stack.array, value)
     stack.size += 1
 end
 
-struct HtmlJSON
-    content
+function pop(stack::TokenStack)::String
+    return pop!(stack.array)
 end
 
-function tokenizer(html)
+function tokenizer_keep_contents(html::String)::TokenStack
     stack = TokenStack(String[], 0)
     mode = READ_TAG_CONTENT
     store = ""
     store2 = ""
-    for c in html;
+    for c in html
         if mode == READ_TAG_CONTENT
             if c == '<'
                 if store != ""
@@ -58,6 +58,79 @@ function tokenizer(html)
         push(stack, store)
     end
     return stack
+end
+
+function tokenizer(html::String)::TokenStack
+    stack = TokenStack(String[], 0)
+    mode = READ_TAG_CONTENT
+    store = ""
+    re = r"[0-9a-zA-Z]"
+    has_content = false
+    has_error = false
+    for c in html
+        if mode == READ_TAG_CONTENT
+            if c == '<'
+                if has_content
+                    push(stack, "STRING")
+                end
+                store = "TOKEN_"
+                has_content = false
+                mode = READ_TAG
+            else
+                has_content = true
+            end
+        elseif mode == READ_TAG
+            if c == '>'
+                if store != "TOKEN_"
+                    push(stack, store)
+                else
+                    push(stack, "BAD_TOKEN")
+                end
+                store = ""
+                has_content = false
+                mode = READ_TAG_CONTENT
+            elseif c == '/' && store == "TOKEN_"
+                store = string(store, "END_")
+                has_content = true
+            elseif occursin(re, string(c))
+                store = string(store, uppercase(c))
+            else
+                if has_content
+                    has_error = true
+                end
+                mode = READ_CLOSE_TAG
+            end
+        elseif mode == READ_CLOSE_TAG
+            if c == '>'
+                if store != "TOKEN_" && !has_error
+                    push(stack, store)
+                else
+                    push(stack, "BAD_TOKEN")
+                end
+                store = ""
+                has_error = false
+                has_content = false
+                mode = READ_TAG_CONTENT
+            else
+                # Ignore
+            end
+        end
+    end
+    if has_content
+        push(stack, "STRING")
+    end
+    return stack
+end
+
+function check(stack::TokenStack)::Bool
+    store_stack = TokenStack(String[], 0)
+    for token in stack.array
+        
+    end
+end
+
+struct HtmlJSON
+    content
 end
 
 end
