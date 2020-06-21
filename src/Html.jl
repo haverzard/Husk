@@ -13,7 +13,12 @@ function push(stack::TokenStack, value::String)
 end
 
 function pop(stack::TokenStack)::String
-    return pop!(stack.array)
+    if stack.size > 0
+        stack.size -= 1
+        return pop!(stack.array)
+    else
+        return ""
+    end
 end
 
 function tokenizer_keep_contents(html::String)::TokenStack
@@ -152,7 +157,7 @@ function tokenizer(html::String)::TokenStack
                 end
             elseif mode == READ_STRING
                 if c == store2[begin]
-                    if has_temp_error
+                    if !has_temp_error
                         has_content = true
                     end
                 elseif c == ' '
@@ -169,8 +174,10 @@ function tokenizer(html::String)::TokenStack
             end
         end
     end
-    if mode == READ_TAG_CONTENT && has_content
-        push(stack, "STRING")
+    if mode == READ_TAG_CONTENT
+        if has_content
+            push(stack, "CONTENT")
+        end
     else
         push(stack, "BAD_TOKEN")
     end
@@ -179,9 +186,23 @@ end
 
 function check(stack::TokenStack)::Bool
     store_stack = TokenStack(String[], 0)
+    has_error = false
     for token in stack.array
-        
+        if token == "BAD_TOKEN"
+            has_error = true
+            break
+        elseif occursin(r"TOKEN_END_", token)
+            if pop(store_stack) != string("TOKEN_", token[11:end])
+                has_error = true
+                break
+            end
+            has_error = false
+        elseif token != "CONTENT"
+            push(store_stack, token)
+            has_error = true
+        end
     end
+    return !has_error
 end
 
 struct HtmlJSON
