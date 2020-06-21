@@ -166,13 +166,8 @@ function tokenizer(html::String)::TokenStack
                 if c == '-'
                     counter += 1
                 else
-                    if c == '>'
-                        if counter >= 2
-                            push(stack, "COMMENT")
-                        else
-                            push(stack, "BAD_TOKEN")
-                        end
-                        counter = 0
+                    if c == '>' && counter >= 2
+                        push(stack, "COMMENT")
                         mode = READ_TAG_CONTENT
                     end
                     counter = 0
@@ -338,8 +333,10 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
     result = init_HtmlJSON(tag)
     store = ""
     store2 = ""
+    counter = 0
     has_content = false
     has_temp_error = false
+    has_exclamation = false
     is_singleton = occursin(singleton, tag)
     is_closed = false
     while position < length(html)
@@ -391,9 +388,19 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     store2 = ""
                     has_temp_error = false
                     has_content = false
+                    has_exclamation = false
                     mode = READ_TAG_CONTENT
                 elseif c == '/' && !has_content
                     has_content = true
+                elseif c == '!' && !has_content
+                    has_exclamation = true
+                elseif c == '-' && !has_content && has_exclamation
+                    counter += 1
+                    if counter == 2
+                        has_exclamation = false
+                        counter = 0
+                        mode = READ_COMMENT
+                    end
                 elseif occursin(alphanum, string(c)) || (c == '!' && store == "")
                     store = string(store, lowercase(c))
                 elseif c == ' ' && store != "" && !has_content
@@ -405,9 +412,29 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 else
                     throw(ParseError(position, mode))
                 end
+            elseif mode == READ_COMMENT
+                if c == '-'
+                    counter += 1
+                    store2 = "--"
+                elseif c != ' ' || store != ""
+                    if c == '>' && counter >= 2
+                        for _ in 1:counter-2
+                            store = string(store, "-")
+                        end
+                        temp = init_HtmlJSON("comment")
+                        push!(temp.children, store)
+                        push!(result.children, temp)
+                        store = ""
+                        mode = READ_TAG_CONTENT
+                    else
+                        store = string(store, store2, c)
+                    end
+                    store2 = ""
+                    counter = 0
+                end
             elseif c == '>'
                 if has_temp_error || mode == READ_ATTR_CONTENT
-                    throw(ParseError(position, mode))
+                        throw(ParseError(position, mode))
                 end
 
                 if mode == READ_STRING
@@ -431,6 +458,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 store2 = ""
                 has_temp_error = false
                 has_content = false
+                has_exclamation = false
                 mode = READ_TAG_CONTENT
             elseif mode == READ_ATTR
                 if occursin(alphanum, string(c))
