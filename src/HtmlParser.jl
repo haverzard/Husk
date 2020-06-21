@@ -98,7 +98,7 @@ function tokenizer(html::String)::TokenStack
             end
         else
             if c == '>'
-                if store != "TOKEN_" && !has_error && !has_temp_error
+                if store != "TOKEN_" && !has_error && !has_temp_error && mode != READ_ATTR_CONTENT && (mode != READ_STRING || has_content)
                     push(stack, store)
                 else
                     push(stack, "BAD_TOKEN")
@@ -115,7 +115,7 @@ function tokenizer(html::String)::TokenStack
                 elseif occursin(alphanum, string(c))
                     store = string(store, uppercase(c))
                     has_content = true
-                elseif c == ' ' && !has_content
+                elseif c == ' ' && has_content
                     has_content = false
                     mode = READ_ATTR
                 else
@@ -131,7 +131,9 @@ function tokenizer(html::String)::TokenStack
                     has_error = true
                 end
             elseif mode == READ_ATTR_CONTENT
-                if occursin(alphanum, string(c))
+                if occursin(r"[a-zA-Z]", string(c))
+                    has_temp_error = true
+                    store2 = string(c)
                     mode = READ_BOOLEAN
                 elseif c == '"' || c == '\''
                     mode = READ_STRING
@@ -144,9 +146,8 @@ function tokenizer(html::String)::TokenStack
             elseif mode == READ_BOOLEAN
                 if occursin(r"[falstrue]", string(c))
                     store2 = string(store2, c)
-                    if store2 == "false" || store2 == "true"
-                        has_temp_error = false
-                    end
+                    print("x")
+                    has_temp_error = store2 != "false" && store2 != "true"
                 elseif c == ' '
                     store2 = ""
                     has_error = has_error || has_temp_error
@@ -176,7 +177,7 @@ function tokenizer(html::String)::TokenStack
                     mode = READ_ATTR
                 elseif c == '\\'
                     has_temp_error = !has_temp_error
-                elseif occursin(r"abfnrtv", string(c)) && has_temp_error
+                elseif occursin(r"[abfnrtv]", string(c)) && has_temp_error
                     has_temp_error = false
                 elseif has_content
                     has_error = true
@@ -276,7 +277,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                         push!(result.children, temp)
                     else
                         if store != result.tag
-                            throw(ParseError(position, mode))
+                            throw(CloseTokenError(position))
                         end
                         return (result, position)
                     end
@@ -303,13 +304,23 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     throw(ParseError(position, mode))
                 end
             elseif c == '>'
-                if has_temp_error
+                if has_temp_error || mode == READ_ATTR_CONTENT
                     throw(ParseError(position, mode))
                 end
+
                 if mode == READ_STRING
+                    if !has_content
+                        throw(ParseError(position, mode))
+                    end
                     result.attributes[store] = store2[begin+1:end-1]
+                elseif mode == READ_NUM
+                    if has_content
+                        result.attributes[store] = parse(Float64, store2)
+                    else
+                        result.attributes[store] = parse(Int, store2)
+                    end
                 else
-                    result.attributes[store] = store2
+                    result.attributes[store] = store2 == "true"
                 end
                 store = ""
                 store2 = ""
@@ -328,8 +339,9 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     throw(ParseError(position, mode))
                 end
             elseif mode == READ_ATTR_CONTENT
-                if occursin(alphanum, string(c))
+                if occursin(r"[a-zA-Z]", string(c))
                     store2 = string(c)
+                    has_temp_error = true
                     mode = READ_BOOLEAN
                 elseif c == '"' || c == '\''
                     store2 = string(c)
@@ -343,14 +355,12 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
             elseif mode == READ_BOOLEAN
                 if occursin(r"[falstrue]", string(c))
                     store2 = string(store2, c)
-                    if store2 == "false" || store2 == "true"
-                        has_temp_error = false
-                    end
+                    has_temp_error = store2 != "false" && store2 != "true"
                 elseif c == ' '
                     if has_temp_error
                         throw(ParseError(position, mode))
                     end
-                    result.attributes[store] = store2
+                    result.attributes[store] = store2 == "true"
                     store = ""
                     store2 = ""
                     mode = READ_ATTR
@@ -365,7 +375,11 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     if has_temp_error
                         throw(ParseError(position, mode))
                     end
-                    result.attributes[store] = store2
+                    if has_content
+                        result.attributes[store] = parse(Float64, store2)
+                    else
+                        result.attributes[store] = parse(Int, store2)
+                    end
                     store = ""
                     store2 = ""
                     has_content = false
@@ -381,17 +395,18 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                         has_content = true
                     end
                 elseif c == ' '
-                    if has_temp_error
+                    if has_temp_error || !has_content
                         throw(ParseError(position, mode))
                     end
                     result.attributes[store] = store2[begin+1:end-1]
                     store = ""
                     store2 = ""
+                    has_content = false
                     mode = READ_ATTR
                 elseif c == '\\'
                     store2 = string(store2, c)
                     has_temp_error = !has_temp_error
-                elseif occursin(r"abfnrtv", string(c)) && has_temp_error
+                elseif occursin(r"[abfnrtv]", string(c)) && has_temp_error
                     store2 = string(store2, c)
                     has_temp_error = false 
                 elseif has_content
@@ -401,6 +416,9 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 end
             end
         end
+    end
+    if mode != READ_TAG_CONTENT || store != ""
+        throw(ParseError(position, mode))
     end
     return (result, position)
 end
