@@ -317,8 +317,8 @@ function init_HtmlJSON(tag::String)::HtmlJSON
 end
 
 function convert_tojson(html::String)::HtmlJSON
-    temp, _ = convert_tojson_rec("TEMP", html, 0, READ_START)
-    return temp.children[1]
+    temp, _ = convert_tojson_rec("WRAPPER", html, 0, READ_START)
+    return temp
 end
 
 function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARSE_MODE)::Tuple{HtmlJSON, Int}
@@ -327,6 +327,8 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
     store2 = ""
     has_content = false
     has_temp_error = false
+    is_singleton = occursin(singleton, tag)
+    is_closed = false
     while position < length(html)
         position += 1
         c = html[position]
@@ -344,7 +346,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 store = ""
                 store2 = ""
                 mode = READ_TAG
-            elseif c == '\n' || c == '\r' || c == '\t'
+            elseif occursin(whitespaces, string(c))
                 # Ignore too
             elseif c == ' ' && store == ""
                 # Ignore
@@ -361,12 +363,17 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
             if mode == READ_TAG
                 if c == '>'
                     if !has_content
-                        temp, position = convert_tojson_rec(store, html, position, READ_TAG_CONTENT)
-                        push!(result.children, temp)
+                        if occursin(singleton, store)
+                            push!(result.children, init_HtmlJSON(store))
+                        else
+                            temp, position = convert_tojson_rec(store, html, position, READ_TAG_CONTENT)
+                            push!(result.children, temp)
+                        end
                     else
                         if store != result.tag
                             throw(CloseTokenError(position))
                         end
+                        print('a')
                         return (result, position)
                     end
                     store = ""
@@ -379,12 +386,8 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 elseif occursin(alphanum, string(c))
                     store = string(store, lowercase(c))
                 elseif c == ' ' && store != "" && !has_content
-                    if !has_content
-                        temp, position = convert_tojson_rec(store, html, position, READ_ATTR)
-                        push!(result.children, temp)
-                    else
-                        return (result, position)
-                    end
+                    temp, position = convert_tojson_rec(store, html, position, READ_ATTR)
+                    push!(result.children, temp)
                     has_content = false
                     store = ""
                     mode = READ_TAG_CONTENT
@@ -400,7 +403,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     if !has_content
                         throw(ParseError(position, mode))
                     end
-                    result.attributes[store] = store2[begin+1:end-1]
+                    result.attributes[store] = store2[begin+1:end]
                 elseif mode == READ_NUM
                     if has_content
                         result.attributes[store] = parse(Float64, store2)
@@ -409,6 +412,9 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     end
                 else
                     result.attributes[store] = store2 == "true"
+                end
+                if is_singleton
+                    return (result, position)
                 end
                 store = ""
                 store2 = ""
@@ -503,7 +509,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
             end
         end
     end
-    if mode != READ_TAG_CONTENT || store != ""
+    if tag != "WRAPPER" || mode != READ_TAG_CONTENT || store != ""
         throw(ParseError(position, mode))
     end
     return (result, position)
