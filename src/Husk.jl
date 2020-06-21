@@ -1,5 +1,6 @@
 module Husk
 
-include("Html.jl")
+include("HtmlParser.jl")
+include("HtmlError.jl")
 
 end
