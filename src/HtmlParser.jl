@@ -79,10 +79,11 @@ function tokenizer(html::String)::TokenStack
     has_content = false
     has_error = false
     has_temp_error = false
+    has_exclamation = false
     is_singleton = false
     is_closed = false
-    has_exclamation = false
     is_comment = false
+    is_script = false
     for c in html
         if mode == READ_START
             if c == '<'
@@ -108,16 +109,31 @@ function tokenizer(html::String)::TokenStack
             end
         else
             if mode == READ_TAG
-                if c == '>'
-                    if occursin(singleton, store2)
-                        store = string("SINGLE_", store)
-                    end
-                    if is_comment && counter >= 2
-                        push(stack, "COMMENT")
-                    elseif has_content && !has_error && !is_comment && counter == 0
-                        push(stack, store)
+                if c == '<' && is_script
+                    store = "TOKEN_"
+                    store2 = ""
+                elseif c == '>'
+                    if is_script
+                        if store2 == "/script"
+                            is_script = false
+                            push(stack, "TOKEN_END_SCRIPT")
+                            mode = READ_TAG_CONTENT
+                        else
+                            mode = READ_TAG
+                        end
                     else
-                        push(stack, "BAD_TOKEN")
+                        is_script = store2 == "script"
+                        if occursin(singleton, store2) || has_exclamation
+                            store = string("SINGLE_", store)
+                        end
+                        if is_comment && counter >= 2
+                            push(stack, "COMMENT")
+                        elseif has_content && !has_error && !is_comment && counter == 0
+                            push(stack, store)
+                        else
+                            push(stack, "BAD_TOKEN")
+                        end
+                        mode = READ_TAG_CONTENT
                     end
                     store = ""
                     store2 = ""
@@ -127,7 +143,6 @@ function tokenizer(html::String)::TokenStack
                     has_exclamation = false
                     is_closed = false
                     is_comment = false
-                    mode = READ_TAG_CONTENT
                 elseif c == '/'
                     counter = 0
                     if store == "TOKEN_"
@@ -154,7 +169,8 @@ function tokenizer(html::String)::TokenStack
                 elseif c == '-' && is_comment
                     print(counter)
                     counter += 1
-                elseif c == ' ' && has_content
+                elseif c == ' ' && has_content && store2[1] != '/' && !is_script
+                    is_script = store2 == "script"
                     has_content = false
                     if occursin(singleton, store2)
                         store = string("SINGLE_", store)
@@ -162,11 +178,13 @@ function tokenizer(html::String)::TokenStack
                     end
                     store2 = ""
                     mode = READ_ATTR
+                elseif c == ' ' && is_script
+                    store = string(store, uppercase(c))                    
                 else
                     has_error = true
                 end
             elseif c == '>'                
-                if is_singleton
+                if is_singleton || has_exclamation
                     store = string("SINGLE_", store)
                 end
                 if is_comment && counter >= 2
@@ -280,7 +298,7 @@ function check(stack::TokenStack)::Bool
                 break
             end
             has_error = false
-        elseif token != "CONTENT"
+        elseif token != "CONTENT" && token != "COMMENT" && occursin(r"SINGLE_", token)
             push(store_stack, token)
             has_error = true
         end
