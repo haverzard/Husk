@@ -1,10 +1,9 @@
-@enum PARSE_MODE READ_START READ_TAG READ_ATTR READ_ATTR_CONTENT READ_CLOSE_TAG READ_STRING READ_NUM READ_BOOLEAN READ_TAG_CONTENT
-
+@enum PARSE_MODE READ_COMMENT READ_SCRIPT READ_START READ_TAG READ_ATTR READ_ATTR_CONTENT READ_CLOSE_TAG READ_STRING READ_NUM READ_BOOLEAN READ_TAG_CONTENT
 
 whitespaces = r"[\n\t\r]"
 alphanum = r"[0-9a-zA-Z]"
 num = r"[1-9]"
-singleton = r"area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr"
+singleton = r"area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr|!doctype"
 alphabets = r"[a-zA-Z]"
 
 mutable struct TokenStack
@@ -40,9 +39,7 @@ function tokenizer_keep_contents(html::String)::TokenStack
                 store = "<"
                 store2 = ""
                 mode = READ_TAG
-            elseif occursin(whitespaces, string(c))
-                # Ignore too
-            elseif c == ' ' && store == ""
+            elseif occursin(whitespaces, string(c)) || (c == ' ' && store == "")
                 # Ignore
             elseif c == ' '
                 store2 = string(store2, " ")
@@ -82,7 +79,6 @@ function tokenizer(html::String)::TokenStack
     has_exclamation = false
     is_singleton = false
     is_closed = false
-    is_comment = false
     is_script = false
     for c in html
         if mode == READ_START
@@ -109,31 +105,19 @@ function tokenizer(html::String)::TokenStack
             end
         else
             if mode == READ_TAG
-                if c == '<' && is_script
-                    store = "TOKEN_"
-                    store2 = ""
-                elseif c == '>'
-                    if is_script
-                        if store2 == "/script"
-                            is_script = false
-                            push(stack, "TOKEN_END_SCRIPT")
-                            mode = READ_TAG_CONTENT
-                        else
-                            mode = READ_TAG
-                        end
+                if c == '>'
+                    if store2 == "script"
+                        mode = READ_SCRIPT
                     else
-                        is_script = store2 == "script"
-                        if occursin(singleton, store2) || has_exclamation
-                            store = string("SINGLE_", store)
-                        end
-                        if is_comment && counter >= 2
-                            push(stack, "COMMENT")
-                        elseif has_content && !has_error && !is_comment && counter == 0
-                            push(stack, store)
-                        else
-                            push(stack, "BAD_TOKEN")
-                        end
                         mode = READ_TAG_CONTENT
+                    end
+                    if occursin(singleton, store2) || has_exclamation
+                        store = string("SINGLE_", store)
+                    end
+                    if has_content && !has_error && counter == 0
+                        push(stack, store)
+                    else
+                        push(stack, "BAD_TOKEN")
                     end
                     store = ""
                     store2 = ""
@@ -142,9 +126,7 @@ function tokenizer(html::String)::TokenStack
                     has_content = false
                     has_exclamation = false
                     is_closed = false
-                    is_comment = false
                 elseif c == '/'
-                    counter = 0
                     if store == "TOKEN_"
                         store = string(store, "END_")
                         store2 = string(store2, c)
@@ -154,21 +136,18 @@ function tokenizer(html::String)::TokenStack
                         has_error = true
                     end
                 elseif occursin(alphanum, string(c))
-                    counter = 0
                     store = string(store, uppercase(c))
                     store2 = string(store2, c)
                     has_content = true
                 elseif c == '!' && !has_content
                     has_exclamation = true
-                elseif c == '-' && !has_content && has_exclamation && !is_comment
+                elseif c == '-' && !has_content && has_exclamation
                     counter += 1
                     if counter == 2
-                        is_comment = true
+                        has_exclamation = false
                         counter = 0
+                        mode = READ_COMMENT
                     end
-                elseif c == '-' && is_comment
-                    print(counter)
-                    counter += 1
                 elseif c == ' ' && has_content && store2[1] != '/' && !is_script
                     is_script = store2 == "script"
                     has_content = false
@@ -183,16 +162,57 @@ function tokenizer(html::String)::TokenStack
                 else
                     has_error = true
                 end
-            elseif c == '>'                
+            elseif mode == READ_COMMENT
+                if c == '-'
+                    counter += 1
+                else
+                    if c == '>'
+                        if counter >= 2
+                            push(stack, "COMMENT")
+                        else
+                            push(stack, "BAD_TOKEN")
+                        end
+                        counter = 0
+                        mode = READ_TAG_CONTENT
+                    end
+                    counter = 0
+                end
+            elseif mode == READ_SCRIPT
+                if c == '<'
+                    has_content = store2 != "" || has_content
+                    store2 = ""
+                elseif c == '>'
+                    if store2 == "/script"
+                        is_script = false
+                        if has_content
+                            push(stack, "CONTENT")
+                        end
+                        push(stack, "TOKEN_END_SCRIPT")
+                        mode = READ_TAG_CONTENT
+                        has_content = false
+                    else
+                        mode = READ_SCRIPT
+                        has_content = true
+                    end
+                    store2 = ""
+                else
+                    store2 = string(store2, c)
+                    has_content = true
+                end
+            elseif c == '>'
                 if is_singleton || has_exclamation
                     store = string("SINGLE_", store)
                 end
-                if is_comment && counter >= 2
-                    push(stack, "COMMENT")
-                elseif store != "TOKEN_" && !has_error && !has_temp_error && mode != READ_ATTR_CONTENT && (mode != READ_STRING || has_content)
+                if (store != "TOKEN_" && !has_error && !has_temp_error && mode != READ_ATTR_CONTENT 
+                    && (mode != READ_STRING || has_content) && counter == 0)
                     push(stack, store)
                 else
                     push(stack, "BAD_TOKEN")
+                end
+                if is_script
+                    mode = READ_SCRIPT
+                else
+                    mode = READ_TAG_CONTENT
                 end
                 store = ""
                 store2 = ""
@@ -203,74 +223,67 @@ function tokenizer(html::String)::TokenStack
                 has_exclamation = false
                 is_singleton = false
                 is_closed = false
-                is_comment = false
-                mode = READ_TAG_CONTENT
-            elseif c == '-' && is_comment
-                counter += 1
-            else
-                counter = 0
-                if c == '/' && is_singleton && (mode != READ_STRING || has_content)
-                    is_closed = true
-                elseif is_closed
+            elseif c == '/' && is_singleton && (mode != READ_STRING || has_content)
+                is_closed = true
+            elseif is_closed
+                has_error = true
+            elseif mode == READ_ATTR
+                if occursin(alphanum, string(c))
+                    has_content = true
+                elseif c == '=' && has_content
+                    mode = READ_ATTR_CONTENT
+                    has_content = false
+                elseif !(c == ' ')
                     has_error = true
-                elseif mode == READ_ATTR
-                    if occursin(alphanum, string(c))
+                end
+            elseif mode == READ_ATTR_CONTENT
+                if occursin(alphabets, string(c))
+                    has_temp_error = true
+                    store2 = string(c)
+                    mode = READ_BOOLEAN
+                elseif c == '"' || c == '\''
+                    mode = READ_STRING
+                    store2 = string(c)
+                elseif occursin(num, string(c))
+                    mode = READ_NUM
+                else
+                    has_error = true
+                end
+            elseif mode == READ_BOOLEAN
+                if c != ' '
+                    store2 = string(store2, c)
+                    has_temp_error = store2 != "false" && store2 != "true"
+                else
+                    store2 = ""
+                    has_error = has_error || has_temp_error
+                    has_temp_error = false
+                    mode = READ_ATTR
+                end
+            elseif mode == READ_NUM
+                if c == '.' && !has_content
+                    has_content = true
+                elseif c == ' ' && !has_error
+                    has_content = false
+                    mode = READ_ATTR
+                elseif !occursin(num, string(c))
+                    has_error = true
+                end
+            elseif mode == READ_STRING
+                if c == store2[begin]
+                    if !has_temp_error
                         has_content = true
-                    elseif c == '=' && has_content
-                        mode = READ_ATTR_CONTENT
-                        has_content = false
-                    elseif !(c == ' ')
-                        has_error = true
                     end
-                elseif mode == READ_ATTR_CONTENT
-                    if occursin(alphabets, string(c))
-                        has_temp_error = true
-                        store2 = string(c)
-                        mode = READ_BOOLEAN
-                    elseif c == '"' || c == '\''
-                        mode = READ_STRING
-                        store2 = string(c)
-                    elseif occursin(num, string(c))
-                        mode = READ_NUM
-                    else
-                        has_error = true
-                    end
-                elseif mode == READ_BOOLEAN
-                    if c != ' '
-                        store2 = string(store2, c)
-                        has_temp_error = store2 != "false" && store2 != "true"
-                    else
-                        store2 = ""
-                        has_error = has_error || has_temp_error
-                        has_temp_error = false
-                        mode = READ_ATTR
-                    end
-                elseif mode == READ_NUM
-                    if c == '.' && !has_content
-                        has_content = true
-                    elseif c == ' ' && !has_error
-                        has_content = false
-                        mode = READ_ATTR
-                    elseif !occursin(num, string(c))
-                        has_error = true
-                    end
-                elseif mode == READ_STRING
-                    if c == store2[begin]
-                        if !has_temp_error
-                            has_content = true
-                        end
-                    elseif c == ' '
-                        has_error = has_error || has_temp_error
-                        has_temp_error = false
-                        has_content = false
-                        mode = READ_ATTR
-                    elseif c == '\\'
-                        has_temp_error = !has_temp_error
-                    elseif occursin(r"[abfnrtv]", string(c)) && has_temp_error
-                        has_temp_error = false
-                    elseif has_content
-                        has_error = true
-                    end
+                elseif c == ' '
+                    has_error = has_error || has_temp_error
+                    has_temp_error = false
+                    has_content = false
+                    mode = READ_ATTR
+                elseif c == '\\'
+                    has_temp_error = !has_temp_error
+                elseif occursin(r"[abfnrtv]", string(c)) && has_temp_error
+                    has_temp_error = false
+                elseif has_content
+                    has_error = true
                 end
             end
         end
@@ -346,9 +359,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 store = ""
                 store2 = ""
                 mode = READ_TAG
-            elseif occursin(whitespaces, string(c))
-                # Ignore too
-            elseif c == ' ' && store == ""
+            elseif occursin(whitespaces, string(c)) || (c == ' ' && store == "")
                 # Ignore
             elseif c == ' '
                 store2 = string(store2, " ")
@@ -383,7 +394,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     mode = READ_TAG_CONTENT
                 elseif c == '/' && !has_content
                     has_content = true
-                elseif occursin(alphanum, string(c))
+                elseif occursin(alphanum, string(c)) || (c == '!' && store == "")
                     store = string(store, lowercase(c))
                 elseif c == ' ' && store != "" && !has_content
                     temp, position = convert_tojson_rec(store, html, position, READ_ATTR)
