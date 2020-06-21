@@ -144,17 +144,14 @@ function tokenizer(html::String)::TokenStack
                     has_error = true
                 end
             elseif mode == READ_BOOLEAN
-                if occursin(r"[falstrue]", string(c))
+                if c != ' '
                     store2 = string(store2, c)
-                    print("x")
                     has_temp_error = store2 != "false" && store2 != "true"
-                elseif c == ' '
+                else
                     store2 = ""
                     has_error = has_error || has_temp_error
                     has_temp_error = false
                     mode = READ_ATTR
-                else
-                    has_temp_error = true
                 end
             elseif mode == READ_NUM
                 if c == '.' && !has_content
@@ -353,10 +350,10 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     throw(ParseError(position, mode))
                 end
             elseif mode == READ_BOOLEAN
-                if occursin(r"[falstrue]", string(c))
+                if c != ' '
                     store2 = string(store2, c)
                     has_temp_error = store2 != "false" && store2 != "true"
-                elseif c == ' '
+                else
                     if has_temp_error
                         throw(ParseError(position, mode))
                     end
@@ -364,8 +361,6 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     store = ""
                     store2 = ""
                     mode = READ_ATTR
-                else
-                    has_temp_error = true
                 end
             elseif mode == READ_NUM
                 if c == '.' && !has_content
