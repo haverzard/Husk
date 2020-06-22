@@ -306,7 +306,7 @@ function check(stack::TokenStack)::Bool
                 break
             end
             has_error = false
-        elseif token != "CONTENT" && token != "COMMENT" && occursin(r"SINGLE_", token)
+        elseif token != "CONTENT" && token != "COMMENT" && !occursin(r"SINGLE_", token)
             push(store_stack, token)
             has_error = true
         end
