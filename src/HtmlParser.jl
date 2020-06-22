@@ -111,7 +111,7 @@ function tokenizer(html::String)::TokenStack
                     else
                         mode = READ_TAG_CONTENT
                     end
-                    if occursin(singleton, store2) || has_exclamation
+                    if occursin(singleton, store2) || is_closed || has_exclamation
                         store = string("SINGLE_", store)
                     end
                     if has_content && !has_error && counter == 0
@@ -126,11 +126,13 @@ function tokenizer(html::String)::TokenStack
                     has_content = false
                     has_exclamation = false
                     is_closed = false
+                elseif is_closed
+                    has_error = true
                 elseif c == '/'
                     if store == "TOKEN_"
                         store = string(store, "END_")
                         store2 = string(store2, c)
-                    elseif occursin(singleton, store2) && !is_closed
+                    elseif !occursin(r"TOKEN_END", store)
                         is_closed = true
                     else
                         has_error = true
@@ -218,8 +220,9 @@ function tokenizer(html::String)::TokenStack
                 has_exclamation = false
                 is_singleton = false
                 is_closed = false
-            elseif c == '/' && is_singleton && (mode != READ_STRING || has_content)
+            elseif c == '/' && (mode != READ_STRING || has_content)
                 is_closed = true
+                is_singleton = true
             elseif is_closed
                 has_error = true
             elseif mode == READ_ATTR
@@ -381,7 +384,6 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                         if store != result.tag
                             throw(CloseTokenError(position))
                         end
-                        print('a')
                         return (result, position)
                     end
                     store = ""
