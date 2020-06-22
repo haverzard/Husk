@@ -153,10 +153,7 @@ function tokenizer(html::String)::TokenStack
                 elseif c == ' ' && has_content && store2[1] != '/' && !is_script
                     is_script = store2 == "script"
                     has_content = false
-                    if occursin(singleton, store2)
-                        store = string("SINGLE_", store)
-                        is_singleton = true
-                    end
+                    is_singleton = occursin(singleton, store2)
                     store2 = ""
                     mode = READ_ATTR
                 elseif c == ' ' && is_script
@@ -395,6 +392,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     has_temp_error = false
                     has_content = false
                     has_exclamation = false
+                    is_closed = false
                 elseif c == '/' && !has_content && !is_closed
                     if store == ""
                         has_content = true
