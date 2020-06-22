@@ -373,27 +373,34 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
         else
             if mode == READ_TAG
                 if c == '>'
-                    if !has_content
-                        if occursin(singleton, store)
-                            push!(result.children, init_HtmlJSON(store))
-                        else
-                            temp, position = convert_tojson_rec(store, html, position, READ_TAG_CONTENT)
-                            push!(result.children, temp)
-                        end
+                    if store == "script"
+                        mode = READ_SCRIPT
                     else
-                        if store != result.tag
-                            throw(CloseTokenError(position))
+                        if !has_content
+                            if occursin(singleton, store) || is_closed
+                                push!(result.children, init_HtmlJSON(store))
+                            else
+                                temp, position = convert_tojson_rec(store, html, position, READ_TAG_CONTENT)
+                                push!(result.children, temp)
+                            end
+                        else
+                            if store != result.tag
+                                throw(CloseTokenError(position))
+                            end
+                            return (result, position)
                         end
-                        return (result, position)
+                        mode = READ_TAG_CONTENT
                     end
                     store = ""
-                    store2 = ""
                     has_temp_error = false
                     has_content = false
                     has_exclamation = false
-                    mode = READ_TAG_CONTENT
-                elseif c == '/' && !has_content
-                    has_content = true
+                elseif c == '/' && !has_content && !is_closed
+                    if store == ""
+                        has_content = true
+                    elseif store != ""
+                        is_closed = true
+                    end
                 elseif c == '!' && !has_content
                     has_exclamation = true
                 elseif c == '-' && !has_content && has_exclamation
@@ -418,7 +425,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 if c == '-'
                     counter += 1
                     store2 = "--"
-                elseif c != ' ' || store != ""
+                elseif !occursin(whitespaces, string(c)) || store != ""
                     if c == '>' && counter >= 2
                         for _ in 1:counter-2
                             store = string(store, "-")
@@ -433,6 +440,28 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     end
                     store2 = ""
                     counter = 0
+                end
+            elseif mode == READ_SCRIPT
+                if c == '<'
+                    store = string(store, store2)
+                    store2 = "<"
+                elseif c == '>'
+                    if store2 == "</script"
+                        is_script = false
+                        if store != ""
+                            temp = init_HtmlJSON("script")
+                            push!(temp.children, store)
+                            push!(result.children, temp)
+                        end
+                        mode = READ_TAG_CONTENT
+                        store = ""
+                    else
+                        store = string(store, store2, c)
+                        mode = READ_SCRIPT
+                    end
+                    store2 = ""
+                elseif !occursin(whitespaces, string(c)) || store2 != ""
+                    store2 = string(store2, c)
                 end
             elseif c == '>'
                 if has_temp_error || mode == READ_ATTR_CONTENT
@@ -456,12 +485,19 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 if is_singleton
                     return (result, position)
                 end
+                if is_script
+                    mode = READ_SCRIPT
+                else
+                    mode = READ_TAG_CONTENT
+                end
                 store = ""
                 store2 = ""
                 has_temp_error = false
                 has_content = false
                 has_exclamation = false
-                mode = READ_TAG_CONTENT
+            elseif c == '/' && (mode != READ_STRING || has_content)
+                is_closed = true
+                is_singleton = true
             elseif mode == READ_ATTR
                 if occursin(alphanum, string(c))
                     store = string(store, c)
