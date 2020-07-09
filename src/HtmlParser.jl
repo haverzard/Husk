@@ -400,6 +400,8 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 if c == '>'
                     if !is_closed && store == "script"
                         mode = READ_SCRIPT
+                    elseif !is_closed && store == "style"
+                        mode = READ_STYLE
                     else
                         if !has_content
                             if occursin(singleton, store) || is_closed
@@ -482,7 +484,26 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                         store = ""
                     else
                         store = string(store, store2, c)
-                        mode = READ_SCRIPT
+                    end
+                    store2 = ""
+                elseif !occursin(whitespaces, string(c)) || store2 != ""
+                    store2 = string(store2, c)
+                end
+            elseif mode == READ_STYLE
+                if c == '<'
+                    store = string(store, store2)
+                    store2 = "<"
+                elseif c == '>'
+                    if store2 == "</style"
+                        if store != ""
+                            temp = init_HtmlJSON("style")
+                            push!(temp.children, store)
+                            push!(result.children, temp)
+                        end
+                        mode = READ_TAG_CONTENT
+                        store = ""
+                    else
+                        store = string(store, store2, c)
                     end
                     store2 = ""
                 elseif !occursin(whitespaces, string(c)) || store2 != ""
