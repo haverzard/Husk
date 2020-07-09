@@ -473,7 +473,6 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     store2 = "<"
                 elseif c == '>'
                     if store2 == "</script"
-                        is_script = false
                         if store != ""
                             temp = init_HtmlJSON("script")
                             push!(temp.children, store)
@@ -513,11 +512,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 if is_singleton
                     return (result, position)
                 end
-                if is_script
-                    mode = READ_SCRIPT
-                else
-                    mode = READ_TAG_CONTENT
-                end
+                mode = READ_TAG_CONTENT
                 store = ""
                 store2 = ""
                 has_temp_error = false
