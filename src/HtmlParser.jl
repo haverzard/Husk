@@ -107,9 +107,9 @@ function tokenizer(html::String)::TokenStack
         else
             if mode == READ_TAG
                 if c == '>'
-                    if store2 == "script"
+                    if !is_closed && store2 == "script"
                         mode = READ_SCRIPT
-                    elseif store2 == "style"
+                    elseif !is_closed && store2 == "style"
                         mode = READ_STYLE
                     else
                         mode = READ_TAG_CONTENT
@@ -229,6 +229,8 @@ function tokenizer(html::String)::TokenStack
                 end
                 if !is_closed && is_script
                     mode = READ_SCRIPT
+                elseif !is_closed && is_style
+                    mode = READ_STYLE
                 else
                     mode = READ_TAG_CONTENT
                 end
