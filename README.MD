@@ -49,9 +49,10 @@ will output
 - [x] Deserialize to json
 - [ ] Serialize from json
 - [x] Supports script (not checking javascript though)
+- [x] Supports style (not checking css though)
 - [x] Supports singleton
 - [X] Supports custom singleton
-- [ ] Supports some front-end syntaxes
+- [X] Supports some front-end syntaxes
 - [ ] Children-Parent List Representation
 - [ ] And more coming soon...
 
