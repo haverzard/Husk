@@ -398,7 +398,7 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
         else
             if mode == READ_TAG
                 if c == '>'
-                    if store == "script"
+                    if !is_closed && store == "script"
                         mode = READ_SCRIPT
                     else
                         if !has_content
@@ -507,6 +507,8 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     end
                 elseif mode == READ_BOOLEAN
                     result.attributes[store] = store2 == "true"
+                elseif mode == READ_ATTR && store != ""
+                    result.attributes[store] = ""
                 end
                 if is_singleton
                     return (result, position)
