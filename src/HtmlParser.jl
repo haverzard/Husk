@@ -1,4 +1,4 @@
-@enum PARSE_MODE READ_COMMENT READ_SCRIPT READ_START READ_TAG READ_ATTR READ_ATTR_CONTENT READ_CLOSE_TAG READ_STRING READ_NUM READ_BOOLEAN READ_TAG_CONTENT
+@enum PARSE_MODE READ_COMMENT READ_SCRIPT READ_STYLE READ_START READ_TAG READ_ATTR READ_ATTR_CONTENT READ_CLOSE_TAG READ_STRING READ_NUM READ_BOOLEAN READ_TAG_CONTENT
 
 whitespaces = r"[\n\t\r]"
 alphanum = r"[0-9a-zA-Z]"
@@ -80,6 +80,7 @@ function tokenizer(html::String)::TokenStack
     is_singleton = false
     is_closed = false
     is_script = false
+    is_style = false
     for c in html
         if mode == READ_START
             if c == '<'
@@ -108,6 +109,8 @@ function tokenizer(html::String)::TokenStack
                 if c == '>'
                     if store2 == "script"
                         mode = READ_SCRIPT
+                    elseif store2 == "style"
+                        mode = READ_STYLE
                     else
                         mode = READ_TAG_CONTENT
                     end
@@ -150,14 +153,15 @@ function tokenizer(html::String)::TokenStack
                         counter = 0
                         mode = READ_COMMENT
                     end
-                elseif c == ' ' && has_content && store2[1] != '/' && !is_script
+                elseif c == ' ' && has_content && store2[1] != '/' && !is_script && !is_style
                     is_script = store2 == "script"
+                    is_style = store2 == "style"
                     has_content = false
                     is_singleton = occursin(singleton, store2)
                     store2 = ""
                     mode = READ_ATTR
-                elseif c == ' ' && is_script
-                    store = string(store, uppercase(c))                    
+                elseif c == ' ' && (is_script || is_style)
+                    store = string(store, uppercase(c))
                 else
                     has_error = true
                 end
@@ -185,7 +189,27 @@ function tokenizer(html::String)::TokenStack
                         mode = READ_TAG_CONTENT
                         has_content = false
                     else
-                        mode = READ_SCRIPT
+                        has_content = true
+                    end
+                    store2 = ""
+                else
+                    store2 = string(store2, c)
+                    has_content = true
+                end
+            elseif mode == READ_STYLE
+                if c == '<'
+                    has_content = store2 != "" || has_content
+                    store2 = ""
+                elseif c == '>'
+                    if store2 == "/style"
+                        is_style = false
+                        if has_content
+                            push(stack, "CONTENT")
+                        end
+                        push(stack, "TOKEN_END_STYLE")
+                        mode = READ_TAG_CONTENT
+                        has_content = false
+                    else
                         has_content = true
                     end
                     store2 = ""
@@ -203,7 +227,7 @@ function tokenizer(html::String)::TokenStack
                 else
                     push(stack, "BAD_TOKEN")
                 end
-                if is_script
+                if !is_closed && is_script
                     mode = READ_SCRIPT
                 else
                     mode = READ_TAG_CONTENT
@@ -217,6 +241,8 @@ function tokenizer(html::String)::TokenStack
                 has_exclamation = false
                 is_singleton = false
                 is_closed = false
+                is_script = false
+                is_style = false
             elseif c == '/' && (mode != READ_STRING || has_content)
                 is_closed = true
                 is_singleton = true
