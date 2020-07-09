@@ -47,7 +47,7 @@ will output
 - [X] Syntax Checker
 - [X] JSON/Tree Representation
 - [x] Deserialize to json
-- [ ] Serialize from json
+- [X] Serialize from json
 - [x] Supports script (not checking javascript though)
 - [x] Supports style (not checking css though)
 - [x] Supports singleton
