@@ -498,14 +498,14 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                     if !has_content
                         throw(ParseError(position, mode))
                     end
-                    result.attributes[store] = store2[begin+1:end]
+                    result.attributes[store] = store2[begin+1:end-1]
                 elseif mode == READ_NUM
                     if has_content
                         result.attributes[store] = parse(Float64, store2)
                     else
                         result.attributes[store] = parse(Int, store2)
                     end
-                else
+                elseif mode == READ_BOOLEAN
                     result.attributes[store] = store2 == "true"
                 end
                 if is_singleton
@@ -530,8 +530,10 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 elseif c == '=' && store != ""
                     mode = READ_ATTR_CONTENT
                 elseif c == ' '
-                    result.attributes[store] = ""
-                    store = ""
+                    if store != ""
+                        result.attributes[store] = ""
+                        store = ""
+                    end
                 else
                     throw(ParseError(position, mode))
                 end
@@ -588,7 +590,10 @@ function convert_tojson_rec(tag::String, html::String, position::Int, mode::PARS
                 if c == store2[begin]
                     if !has_temp_error
                         has_content = true
+                    else
+                        has_temp_error = false
                     end
+                    store2 = string(store2, c)
                 elseif c == ' '
                     if has_temp_error || !has_content
                         throw(ParseError(position, mode))
