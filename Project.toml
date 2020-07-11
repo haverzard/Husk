@@ -2,3 +2,9 @@ name = "Husk"
 uuid = "535f524f-593d-4af4-8dd4-d503c944f482"
 authors = ["Yonatan <48679462+haverzard@users.noreply.github.com>"]
 version = "0.1.0"
+
+[extras]
+Test = “8dfed614-e22c-5e08-85e1-65c5234f0b40”
+
+[targets]
+test = [“Test”]
