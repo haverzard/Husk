@@ -1,4 +1,6 @@
 # Husk
+![travis-ci](https://travis-ci.com/haverzard/Husk.svg?token=Y6R1oCz891w1Si7ewrbX&branch=master)
+
 A simple HTML tokenizer library using Julia.
 
 ## Usage
