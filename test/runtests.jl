@@ -1,4 +1,5 @@
-include("../src/Husk.jl")
+using Test
+using Husk
 
 @test Husk.check(Husk.tokenizer("<Test>World!</Test>Hello<Test/>")) == true
 
